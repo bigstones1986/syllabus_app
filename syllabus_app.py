@@ -2,13 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 
-# --- アプリの基本的なUIを設定 ---
-st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="✅", layout="wide")
-
-with st.container():
-    st.title("✅ シラバス整形・検索アプリ")
-    st.write("CSVファイルをアップロードし、条件で絞り込んだ結果から、さらに必要な科目だけを選んでHTMLとして出力します。")
-
 # --- HTML生成ロジックを関数として定義 ---
 def create_html_content(df_to_render):
     """
@@ -70,17 +63,48 @@ def create_html_content(df_to_render):
             <div class="section-box"><h2>授業計画</h2><ul>{keikaku_list_items}</ul></div>
             <div class="section-box"><h2>成績評価</h2><p>{hyoka_hoho}</p><ul><li><strong>試験</strong>: {shiken_jisshi}</li><li><strong>再試験</strong>: {saishiken}</li></ul></div>
             <div class="section-box"><h2>教科書・参考書</h2><p><strong>教科書</strong>:</p><ul>{textbooks_list_items}</ul><p><strong>参考書</strong>:</p><ul>{references_list_items}</ul></div>
-        </div><hr style="border: none; margin: 40px 0;">"""
+        </div>
+        """ # 画面表示用の<hr>は削除
         all_syllabi_parts.append(syllabus_part)
     
     # HTML全体の骨組み
-    st_style = "<style>body{background-color:#f0f2f6}.container{background-color:#fff;border-radius:15px;box-shadow:0 4px 12px rgba(0,0,0,.1);margin:auto;max-width:800px;padding:20px 40px;transition:transform .2s}.container:hover{transform:translateY(-5px)}h1{color:#1a73e8;border-bottom:2px solid #1a73e8;text-align:center}h2{color:#3c4043;border-bottom:1px solid #dfe1e5}ul{list-style:none;padding-left:0}li{margin-bottom:8px}</style>"
+    st_style = """
+    <style>
+        body { background-color: #f0f2f6; font-family: 'Meiryo', sans-serif; }
+        .container { 
+            background-color: #fff; 
+            border-radius: 15px; 
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
+            margin: auto; 
+            max-width: 800px; 
+            padding: 20px 40px;
+        }
+        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; text-align: center; }
+        h2 { color: #3c4043; border-bottom: 1px solid #dfe1e5; }
+        ul { list-style: none; padding-left: 0; }
+        li { margin-bottom: 8px; }
+        
+        /* ▼▼▼ 新機能: 印刷時のみ適用されるスタイル ▼▼▼ */
+        @media print {
+            body { background-color: #fff; } /* 印刷時は背景色をなくす */
+            .container {
+                page-break-after: always; /* 各科目のコンテナの後で必ず改ページ */
+                box-shadow: none; /* 印刷時は影をなくす */
+                border: 1px solid #ccc;
+            }
+        }
+    </style>
+    """
     html_header = f'<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全科目シラバス一覧</title>{st_style}</head><body>'
     html_footer = "</body></html>"
     
     return html_header + "".join(all_syllabi_parts) + html_footer
 
 # --- メインの処理 ---
+st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="📄", layout="wide")
+st.title("📄 シラバス整形・検索アプリ")
+st.write("CSVファイルをアップロードし、条件で絞り込み、最終的にPDF化も可能なHTMLとして出力します。")
+
 uploaded_file = st.file_uploader("ここにシラバスのCSVファイルをドラッグ＆ドロップしてください", type=['csv'])
 
 if uploaded_file is not None:
@@ -93,16 +117,12 @@ if uploaded_file is not None:
         st.markdown("---")
         st.subheader("1. 絞り込みと並び替え")
         
-        # 絞り込み条件
         bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
         unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
         selected_options = st.multiselect('対象で絞り込み', unique_options, default=unique_options)
         keyword = st.text_input("キーワードでさらに絞り込み")
-        
-        # 並び替え条件
         sort_option = st.radio("学年で並び替え", ('並び替えなし', '学年で昇順', '学年で降順'), horizontal=True)
 
-        # フィルタリング実行
         df_filtered = df.copy()
         if selected_options:
             escaped_options = [re.escape(opt) for opt in selected_options]
@@ -112,13 +132,11 @@ if uploaded_file is not None:
             mask = df_filtered[search_columns].apply(lambda col: col.str.contains(keyword, case=False, na=False)).any(axis=1)
             df_filtered = df_filtered[mask]
         
-        # 並び替え実行
         if sort_option == '学年で昇順':
             df_filtered = df_filtered.sort_values(by='sort_year', ascending=True)
         elif sort_option == '学年で降順':
             df_filtered = df_filtered.sort_values(by='sort_year', ascending=False)
         
-        # --- ▼▼▼ 新機能: 絞り込み結果を可視化し、最終選択 ▼▼▼ ---
         st.markdown("---")
         st.subheader(f"2. 結果の選択（{len(df_filtered)}件ヒット）")
         st.write("HTMLとして出力したい科目にチェックを入れてください。")
@@ -129,19 +147,15 @@ if uploaded_file is not None:
                 if st.checkbox(row['授業科目'], value=True, key=f"check_{index}"):
                     selected_rows_indices.append(index)
             
-            # 選択された行だけを最終的なデータフレームにする
             df_final = df.loc[selected_rows_indices]
 
             if not df_final.empty:
-                # 選択されたデータでHTMLを生成
                 final_html = create_html_content(df_final)
-                
-                # ダウンロードボタン
                 st.markdown("---")
                 st.download_button(
-                    label=f"✅ 選択した{len(df_final)}件のHTMLをダウンロード",
+                    label=f"📄 選択した{len(df_final)}件のHTMLをダウンロード",
                     data=final_html,
-                    file_name="選択後シラバス_統合版.html",
+                    file_name="選択後シラバス_印刷対応版.html",
                     mime="text/html"
                 )
             else:
