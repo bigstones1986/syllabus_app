@@ -4,9 +4,11 @@ import os
 import re
 
 # --- アプリの基本的なUIを設定 ---
-st.set_page_config(page_title="シラバス整形アプリ", layout="wide")
-st.title("📝 シラバス整形アプリ")
-st.write("大学のシラバス情報が入ったCSVファイルをアップロードすると、整形されたHTMLファイル（統合版）をダウンロードできます。")
+st.set_page_config(page_title="シラバス整形アプリ", page_icon="🔍", layout="wide")
+
+with st.container():
+    st.title("🔍 シラバス整形・検索アプリ")
+    st.write("CSVファイルをアップロードし、学科・学年・キーワードで絞り込み、並び替えてHTMLとして出力します。")
 
 # --- ファイルアップロード機能 ---
 uploaded_file = st.file_uploader("ここにシラバスのCSVファイルをドラッグ＆ドロップしてください", type=['csv'])
@@ -17,49 +19,46 @@ if uploaded_file is not None:
         st.success("CSVファイルの読み込みに成功しました！")
         df.fillna('', inplace=True)
         
-        # --- 並び替えと絞り込み用の学年データを抽出 ---
         df['year_num'] = df['授業科目'].str.extract(r'(\d)').astype(float)
 
-
-        # --- 絞り込みと並び替えのUI ---
+        st.markdown("---")
         st.subheader("絞り込みと並び替え")
         
-        # --- ▼▼▼ 新機能: 学年選択チェックボックスを追加 ▼▼▼ ---
-        col1, col2 = st.columns(2) # 画面を2つの列に分割
-
-        with col1: # 左側の列に学科選択を配置
+        # --- 絞り込み条件 ---
+        col1, col2 = st.columns(2)
+        with col1:
             department_options = ['N', 'S', 'E', 'B']
-            selected_departments = st.multiselect(
-                '学科を選択してください（複数選択可）',
-                department_options,
-                default=department_options
-            )
-
-        with col2: # 右側の列に学年選択を配置
+            selected_departments = st.multiselect('学科を選択', department_options, default=department_options)
+        with col2:
             year_options = [1, 2, 3, 4]
-            selected_years = st.multiselect(
-                '学年を選択してください（複数選択可）',
-                year_options,
-                default=year_options
-            )
-        
-        sort_option = st.radio(
-            "並び替え方法を選択:",
-            ('並び替えなし', '学年で昇順', '学年で降順'),
-            horizontal=True
-        )
+            selected_years = st.multiselect('学年を選択', year_options, default=year_options)
+
+        # --- ▼▼▼ 新機能: キーワード検索入力欄 ▼▼▼ ---
+        keyword = st.text_input("キーワードでさらに絞り込み（授業科目、担当教員、授業概要から検索）")
+
+        # --- 並び替え条件 ---
+        sort_option = st.radio("並び替え", ('並び替えなし', '学年で昇順', '学年で降順'), horizontal=True)
 
         # --- フィルタリング処理 ---
-        # まず学科で絞り込み
+        # 1. 学科で絞り込み
         if selected_departments:
             df_filtered = df[df['授業科目'].str.contains('|'.join(selected_departments), na=False)]
         else:
-            df_filtered = df.copy() # 何も選択されなければ全学科を対象
+            df_filtered = df.copy()
 
-        # 次に学年で絞り込み
+        # 2. 学年で絞り込み
         if selected_years:
             df_filtered = df_filtered[df_filtered['year_num'].isin(selected_years)]
         
+        # 3. ▼▼▼ 新機能: キーワードで絞り込み ▼▼▼
+        if keyword:
+            # 検索対象の列を指定
+            search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標']
+            # 各列にキーワードが含まれるかどうかのマスクを作成 (大文字・小文字は区別しない)
+            mask = df_filtered[search_columns].apply(
+                lambda col: col.str.contains(keyword, case=False, na=False)
+            ).any(axis=1)
+            df_filtered = df_filtered[mask]
         
         # --- 並び替え処理 ---
         if not df_filtered.empty:
@@ -68,7 +67,7 @@ if uploaded_file is not None:
             elif sort_option == '学年で降順':
                 df_filtered = df_filtered.sort_values(by='year_num', ascending=False)
             
-            st.info(f"{len(df_filtered)}件の科目を処理します。")
+            st.info(f"{len(df_filtered)}件の科目がヒットしました。")
         else:
              st.warning("条件に一致する科目がありません。")
 
@@ -77,10 +76,12 @@ if uploaded_file is not None:
         if not df_filtered.empty:
             all_syllabi_parts = []
             for index, row in df_filtered.iterrows():
-                # (以降のデータ抽出、HTML生成ロジックは前回と全く同じです)
                 kamoku_mei = row.get('授業科目', '')
+                kamoku_mei = kamoku_mei.replace('～', '-')
+                
                 if not kamoku_mei: continue
                 
+                # (以降のデータ抽出、HTML生成ロジックは前回と全く同じです)
                 kamoku_numbering = row.get('科目ナンバリング', '')
                 tanin_kyoin = row.get('担当教員', '')
                 kaiko_nendo = f"{row.get('年度', '')}年度"
@@ -121,56 +122,48 @@ if uploaded_file is not None:
                 syllabus_part = f"""
             <div class="container">
                 <h1>{kamoku_mei}</h1>
-                <div class="section-box">
-                    <h2>科目基本情報</h2>
-                    <ul>
-                        <li><strong>科目ナンバリング</strong>: {kamoku_numbering}</li>
-                        <li><strong>担当教員</strong>: {tanin_kyoin}</li>
-                        <li><strong>開講年度・学期</strong>: {kaiko_nendo} {kaiko_ki}</li>
-                        <li><strong>開講年次</strong>: {kaiko_nenji}</li>
-                        <li><strong>単位数</strong>: {tani}</li>
-                        <li><strong>授業形態</strong>: {jugyo_keitai}</li>
-                    </ul>
-                </div>
-                <div class="section-box">
-                    <h2>科目概要</h2>
+                <div class="section-box"><h2>科目基本情報</h2><ul>
+                    <li><strong>科目ナンバリング</strong>: {kamoku_numbering}</li><li><strong>担当教員</strong>: {tanin_kyoin}</li>
+                    <li><strong>開講年度・学期</strong>: {kaiko_nendo} {kaiko_ki}</li><li><strong>開講年次</strong>: {kaiko_nenji}</li>
+                    <li><strong>単位数</strong>: {tani}</li><li><strong>授業形態</strong>: {jugyo_keitai}</li>
+                </ul></div>
+                <div class="section-box"><h2>科目概要</h2>
                     <p><strong>テーマ（ねらい）及び到達目標</strong>:<br/>{theme_goal}</p>
                     <p><strong>授業概要</strong>:<br/>{gaiyo}</p>
                 </div>
-                <div class="section-box">
-                    <h2>授業計画</h2>
-                    <ul>{keikaku_list_items}</ul>
+                <div class="section-box"><h2>授業計画</h2><ul>{keikaku_list_items}</ul></div>
+                <div class="section-box"><h2>成績評価</h2><p>{hyoka_hoho}</p>
+                    <ul><li><strong>試験</strong>: {shiken_jisshi}</li><li><strong>再試験</strong>: {saishiken}</li></ul>
                 </div>
-                <div class="section-box">
-                    <h2>成績評価</h2>
-                    <p>{hyoka_hoho}</p>
-                    <ul>
-                        <li><strong>試験</strong>: {shiken_jisshi}</li>
-                        <li><strong>再試験</strong>: {saishiken}</li>
-                    </ul>
-                </div>
-                <div class="section-box">
-                    <h2>教科書・参考書</h2>
-                    <p><strong>教科書</strong>:</p>
-                    <ul>{textbooks_list_items}</ul>
-                    <p><strong>参考書</strong>:</p>
-                    <ul>{references_list_items}</ul>
-                </div>
-            </div>
-            <hr style="border: 1px dashed #ccc; margin: 40px 0;">
-        """
+                <div class="section-box"><h2>教科書・参考書</h2><p><strong>教科書</strong>:</p><ul>{textbooks_list_items}</ul><p><strong>参考書</strong>:</p><ul>{references_list_items}</ul></div>
+            </div><hr style="border: none; margin: 40px 0;">
+            """
                 all_syllabi_parts.append(syllabus_part)
-
-            html_header = """
-        <!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全科目シラバス一覧</title><style>body { font-family: 'Meiryo', sans-serif; line-height: 1.6; margin: 40px; background-color: #f4f4f4; } .container { max-width: 800px; margin: auto; border: 1px solid #ccc; padding: 20px 40px; background-color: #fff; box-shadow: 0 0 10px rgba(0,0,0,0.05); } h1 { text-align: center; border-bottom: 2px solid #000; padding-bottom: 10px; } h2 { border-bottom: 1px solid #ddd; padding-bottom: 5px; } ul { list-style: none; padding-left: 0; } li { margin-bottom: 8px; } strong { font-weight: bold; } .section-box { margin-bottom: 30px; }</style></head><body>
-        """
+            
+            # (HTMLのヘッダー、フッター、結合、ダウンロードボタンは前回と同じです)
+            st_style = """
+            <style>
+                body { background-color: #f0f2f6; }
+                .container { background-color: #fff; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: auto; max-width: 800px; padding: 20px 40px; transition: transform 0.2s; }
+                .container:hover { transform: translateY(-5px); }
+                h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; text-align: center; }
+                h2 { color: #3c4043; border-bottom: 1px solid #dfe1e5; }
+                ul { list-style: none; padding-left: 0; }
+                li { margin-bottom: 8px; }
+            </style>
+            """
+            html_header = f"""
+            <!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全科目シラバス一覧</title>{st_style}</head><body>
+            """
             html_footer = "</body></html>"
+            
             final_html = html_header + "".join(all_syllabi_parts) + html_footer
             
+            st.markdown("---")
             st.download_button(
-                label="絞り込み・並び替え結果のHTMLをダウンロード",
+                label="📥 検索結果のHTMLをダウンロード",
                 data=final_html,
-                file_name="処理後シラバス_統合版.html",
+                file_name="検索後シラバス_統合版.html",
                 mime="text/html"
             )
 
