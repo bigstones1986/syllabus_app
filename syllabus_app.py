@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 
-# --- HTML生成ロジックを関数として定義 ---
 def create_html_content(df_to_render):
     """
     データフレームを受け取り、整形されたHTML文字列を生成する関数
@@ -100,20 +99,6 @@ def create_html_content(df_to_render):
 # --- ここからメインのアプリ処理 ---
 st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="🗂️", layout="wide")
 
-# --- ▼▼▼ 新機能: サイドバーの横幅を調整するCSSを追加 ▼▼▼ ---
-st.markdown(
-    """
-    <style>
-    [data-testid="stSidebar"] {
-        width: 400px !important;
-    }
-    </style>
-    """,
-    unsafe_allow_html=True
-)
-# --- ▲▲▲ ここまでが追加部分 ▲▲▲ ---
-
-
 st.sidebar.title("🗂️ 操作パネル")
 uploaded_file = st.sidebar.file_uploader("1. CSVファイルをアップロード", type=['csv'])
 
@@ -121,9 +106,11 @@ if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file, encoding='cp932')
         df.fillna('', inplace=True)
-        df['sort_year'] = df['授業科目'].str.extract(r'(\d)').astype(float)
         
         with st.sidebar.expander("2. 絞り込み", expanded=True):
+            # ▼▼▼ 言語選択ラジオボタンを再追加 ▼▼▼
+            lang_option = st.radio("言語を選択", ('日本語のみ', '英語のみ', 'すべて'), horizontal=True)
+            
             bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
             unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
             selected_options = st.multiselect('対象を選択', unique_options, default=unique_options)
@@ -135,10 +122,18 @@ if uploaded_file is not None:
             sort_option = st.radio("学年で並び替え", ('並び替えなし', '学年で昇順', '学年で降順'))
 
         st.title("📚 シラバス整形・検索結果")
-        st.write("左のパネルで絞り込みや並び替えができます。")
         
+        # ▼▼▼ 選択された言語で最初に絞り込み ▼▼▼
+        df_lang_filtered = df.copy()
+        if lang_option == '日本語のみ':
+            df_lang_filtered = df[df['言語区分'] == '日本語']
+        elif lang_option == '英語のみ':
+            df_lang_filtered = df[df['言語区分'] == '英語']
+
         # フィルタリングと並び替え
-        df_filtered = df.copy()
+        df_filtered = df_lang_filtered.copy()
+        df_filtered['sort_year'] = df_filtered['授業科目'].str.extract(r'(\d)').astype(float)
+        
         if selected_options:
             escaped_options = [re.escape(opt) for opt in selected_options]
             df_filtered = df_filtered[df_filtered['授業科目'].str.contains('|'.join(escaped_options), na=False)]
@@ -156,7 +151,9 @@ if uploaded_file is not None:
             df_filtered = df_filtered.sort_values(by='sort_year', ascending=False)
         
         st.markdown("---")
-        st.subheader(f"4. 結果の選択（{len(df_filtered)}件ヒット）")
+        st.subheader(f"結果の選択（{len(df_filtered)}件ヒット）")
+        
+        download_placeholder = st.empty()
         
         if 'select_all' not in st.session_state:
             st.session_state.select_all = True
@@ -182,8 +179,7 @@ if uploaded_file is not None:
 
             if not df_final.empty:
                 final_html = create_html_content(df_final)
-                st.markdown("---")
-                st.download_button(
+                download_placeholder.download_button(
                     label=f"📄 選択した{len(df_final)}件のHTMLをダウンロード",
                     data=final_html,
                     file_name="選択後シラバス_印刷対応版.html",
