@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import re
 
+# --- HTML生成ロジックを関数として定義 ---
 def create_html_content(df_to_render):
     """
     データフレームを受け取り、整形されたHTML文字列を生成する関数
@@ -99,6 +100,20 @@ def create_html_content(df_to_render):
 # --- ここからメインのアプリ処理 ---
 st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="🗂️", layout="wide")
 
+# --- ▼▼▼ 新機能: サイドバーの横幅を調整するCSSを追加 ▼▼▼ ---
+st.markdown(
+    """
+    <style>
+    [data-testid="stSidebar"] {
+        width: 400px !important;
+    }
+    </style>
+    """,
+    unsafe_allow_html=True
+)
+# --- ▲▲▲ ここまでが追加部分 ▲▲▲ ---
+
+
 st.sidebar.title("🗂️ 操作パネル")
 uploaded_file = st.sidebar.file_uploader("1. CSVファイルをアップロード", type=['csv'])
 
@@ -112,8 +127,8 @@ if uploaded_file is not None:
             bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
             unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
             selected_options = st.multiselect('対象を選択', unique_options, default=unique_options)
+            st.caption("クリックして文字を入力すると、選択肢を検索できます。")
             
-            # ▼▼▼ 複数キーワードに対応するためのUI修正 ▼▼▼
             keyword_input = st.text_input("キーワード（スペースで区切って複数指定可）")
         
         with st.sidebar.expander("3. 並び替え", expanded=True):
@@ -128,16 +143,11 @@ if uploaded_file is not None:
             escaped_options = [re.escape(opt) for opt in selected_options]
             df_filtered = df_filtered[df_filtered['授業科目'].str.contains('|'.join(escaped_options), na=False)]
         
-        # ▼▼▼ 複数キーワード（AND検索）に対応するよう修正 ▼▼▼
         if keyword_input:
-            keywords = keyword_input.split() # スペースで区切ってリスト化
+            keywords = keyword_input.split()
             search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標', 'その他']
-            
             for keyword in keywords:
-                # 各キーワードで順番に絞り込んでいく
-                mask = df_filtered[search_columns].apply(
-                    lambda col: col.str.contains(keyword, case=False, na=False)
-                ).any(axis=1)
+                mask = df_filtered[search_columns].apply(lambda col: col.str.contains(keyword, case=False, na=False)).any(axis=1)
                 df_filtered = df_filtered[mask]
 
         if sort_option == '学年で昇順':
