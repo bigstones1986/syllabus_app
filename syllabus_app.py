@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import re
 
-# --- HTML生成ロジックを関数として定義 ---
 def create_html_content(df_to_render):
     """
     データフレームを受け取り、整形されたHTML文字列を生成する関数
@@ -22,7 +21,10 @@ def create_html_content(df_to_render):
         jugyo_keitai = row.get('授業形態', '')
         theme_goal = str(row.get('テーマ(ねらい)及び到達目標', '')).replace('<br>', '<br/>')
         gaiyo = str(row.get('授業概要', '')).replace('<br>', '<br/>')
-        
+        dp_info = str(row.get('DPとの対応', '')).replace('<br>', '<br/>')
+        sonota_info = str(row.get('その他', '')).replace('<br>', '<br/>')
+
+        # 授業計画の整形
         keikaku_list_items = ""
         for i in range(1, 16):
             col_name = f'授業計画(15回)（第{i}回）'
@@ -31,10 +33,12 @@ def create_html_content(df_to_render):
                 plan_clean = re.sub('<[^<]+?>', '', plan).strip()
                 keikaku_list_items += f"<li><strong>第{i}回</strong>: {plan_clean}</li>"
 
+        # 成績評価の整形
         hyoka_hoho = str(row.get('評価方法', '')).replace('<br>', '<br/>')
         saishiken = row.get('再試験有無', '')
         shiken_jisshi = row.get('試験実施について', '')
 
+        # 教科書・参考書の整形
         textbooks_list_items = ""
         for i in range(1, 7):
             if row.get(f'教科書（書籍名{i}）'):
@@ -50,7 +54,7 @@ def create_html_content(df_to_render):
                 references_list_items += f"<li>{book_name}</li>"
         if not references_list_items: references_list_items = "<li>特になし</li>"
 
-        # 1科目分のHTMLパーツ
+        # 1科目分のHTMLパーツを生成
         syllabus_part = f"""
         <div class="container">
             <h1>{kamoku_mei}</h1>
@@ -59,50 +63,42 @@ def create_html_content(df_to_render):
                 <li><strong>開講年度・学期</strong>: {kaiko_nendo} {kaiko_ki}</li><li><strong>開講年次</strong>: {kaiko_nenji}</li>
                 <li><strong>単位数</strong>: {tani}</li><li><strong>授業形態</strong>: {jugyo_keitai}</li>
             </ul></div>
-            <div class="section-box"><h2>科目概要</h2><p><strong>テーマ（ねらい）及び到達目標</strong>:<br/>{theme_goal}</p><p><strong>授業概要</strong>:<br/>{gaiyo}</p></div>
+            <div class="section-box"><h2>科目概要</h2>
+                <p><strong>テーマ（ねらい）及び到達目標</strong>:<br/>{theme_goal}</p>
+                <p><strong>授業概要</strong>:<br/>{gaiyo}</p>
+                <p><strong>DPとの対応</strong>:<br/>{dp_info}</p>
+            </div>
             <div class="section-box"><h2>授業計画</h2><ul>{keikaku_list_items}</ul></div>
             <div class="section-box"><h2>成績評価</h2><p>{hyoka_hoho}</p><ul><li><strong>試験</strong>: {shiken_jisshi}</li><li><strong>再試験</strong>: {saishiken}</li></ul></div>
+            <div class="section-box"><h2>その他</h2><p>{sonota_info}</p></div>
             <div class="section-box"><h2>教科書・参考書</h2><p><strong>教科書</strong>:</p><ul>{textbooks_list_items}</ul><p><strong>参考書</strong>:</p><ul>{references_list_items}</ul></div>
         </div>
-        """ # 画面表示用の<hr>は削除
+        """
         all_syllabi_parts.append(syllabus_part)
     
-    # HTML全体の骨組み
     st_style = """
     <style>
-        body { background-color: #f0f2f6; font-family: 'Meiryo', sans-serif; }
-        .container { 
-            background-color: #fff; 
-            border-radius: 15px; 
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1); 
-            margin: auto; 
-            max-width: 800px; 
-            padding: 20px 40px;
-        }
-        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; text-align: center; }
-        h2 { color: #3c4043; border-bottom: 1px solid #dfe1e5; }
+        body { background-color: #f0f2f6; font-family: 'Meiryo', 'メイリオ', sans-serif; }
+        .container { background-color: #fff; border-radius: 15px; box-shadow: 0 4px 12px rgba(0,0,0,0.1); margin: auto; max-width: 800px; padding: 20px 40px;}
+        h1 { color: #1a73e8; border-bottom: 2px solid #1a73e8; text-align: center; font-size: 1.8em; padding-bottom: 10px; }
+        h2 { color: #3c4043; border-bottom: 1px solid #dfe1e5; font-size: 1.3em; padding-bottom: 5px; margin-top: 30px;}
         ul { list-style: none; padding-left: 0; }
         li { margin-bottom: 8px; }
-        
-        /* ▼▼▼ 新機能: 印刷時のみ適用されるスタイル ▼▼▼ */
+        p { margin-left: 5px; }
+        strong { font-weight: bold; }
         @media print {
-            body { background-color: #fff; } /* 印刷時は背景色をなくす */
-            .container {
-                page-break-after: always; /* 各科目のコンテナの後で必ず改ページ */
-                box-shadow: none; /* 印刷時は影をなくす */
-                border: 1px solid #ccc;
-            }
+            body { background-color: #fff; }
+            .container { page-break-after: always; box-shadow: none; border: 1px solid #ccc; }
         }
     </style>
     """
     html_header = f'<!DOCTYPE html><html lang="ja"><head><meta charset="UTF-8"><title>全科目シラバス一覧</title>{st_style}</head><body>'
     html_footer = "</body></html>"
-    
     return html_header + "".join(all_syllabi_parts) + html_footer
 
-# --- メインの処理 ---
-st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="📄", layout="wide")
-st.title("📄 シラバス整形・検索アプリ")
+# --- ここからメインのアプリ処理 ---
+st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="📚", layout="wide")
+st.title("📚 シラバス整形・検索アプリ")
 st.write("CSVファイルをアップロードし、条件で絞り込み、最終的にPDF化も可能なHTMLとして出力します。")
 
 uploaded_file = st.file_uploader("ここにシラバスのCSVファイルをドラッグ＆ドロップしてください", type=['csv'])
@@ -113,14 +109,25 @@ if uploaded_file is not None:
         st.success("CSVファイルの読み込みに成功しました！")
         df.fillna('', inplace=True)
         df['sort_year'] = df['授業科目'].str.extract(r'(\d)').astype(float)
+        
+        # --- ▼▼▼ 新機能1: セッション状態を初期化 ▼▼▼ ---
+        # ページを再読み込みしてもチェック状態を記憶するために使用
+        if 'select_all' not in st.session_state:
+            st.session_state.select_all = True
+        
+        # ファイルが新しくアップロードされたら、必ず全選択状態に戻す
+        if 'last_uploaded_file' not in st.session_state or st.session_state.last_uploaded_file != uploaded_file.name:
+            st.session_state.select_all = True
+            st.session_state.last_uploaded_file = uploaded_file.name
+
 
         st.markdown("---")
         st.subheader("1. 絞り込みと並び替え")
         
         bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
         unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
-        selected_options = st.multiselect('対象で絞り込み', unique_options, default=unique_options)
-        keyword = st.text_input("キーワードでさらに絞り込み")
+        selected_options = st.multiselect('対象で絞り込み（【】内の情報から自動生成）', unique_options, default=unique_options)
+        keyword = st.text_input("キーワードでさらに絞り込み（授業科目、担当教員、授業概要などから検索）")
         sort_option = st.radio("学年で並び替え", ('並び替えなし', '学年で昇順', '学年で降順'), horizontal=True)
 
         df_filtered = df.copy()
@@ -128,7 +135,7 @@ if uploaded_file is not None:
             escaped_options = [re.escape(opt) for opt in selected_options]
             df_filtered = df_filtered[df_filtered['授業科目'].str.contains('|'.join(escaped_options), na=False)]
         if keyword:
-            search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標']
+            search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標', 'その他']
             mask = df_filtered[search_columns].apply(lambda col: col.str.contains(keyword, case=False, na=False)).any(axis=1)
             df_filtered = df_filtered[mask]
         
@@ -139,12 +146,21 @@ if uploaded_file is not None:
         
         st.markdown("---")
         st.subheader(f"2. 結果の選択（{len(df_filtered)}件ヒット）")
+        
+        # --- ▼▼▼ 新機能2: 全選択・全クリアボタン ▼▼▼ ---
+        col1, col2 = st.columns(2)
+        if col1.button("✅ すべて選択"):
+            st.session_state.select_all = True
+        if col2.button("✖️ すべてクリア"):
+            st.session_state.select_all = False
+
         st.write("HTMLとして出力したい科目にチェックを入れてください。")
 
         selected_rows_indices = []
         if not df_filtered.empty:
             for index, row in df_filtered.iterrows():
-                if st.checkbox(row['授業科目'], value=True, key=f"check_{index}"):
+                # --- ▼▼▼ 新機能3: チェックボックスの状態をセッションと連動 ▼▼▼ ---
+                if st.checkbox(row['授業科目'], value=st.session_state.select_all, key=f"check_{index}"):
                     selected_rows_indices.append(index)
             
             df_final = df.loc[selected_rows_indices]
