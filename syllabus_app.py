@@ -97,69 +97,74 @@ def create_html_content(df_to_render):
     return html_header + "".join(all_syllabi_parts) + html_footer
 
 # --- ここからメインのアプリ処理 ---
-st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="📚", layout="wide")
-st.title("📚 シラバス整形・検索アプリ")
-st.write("CSVファイルをアップロードし、条件で絞り込み、最終的にPDF化も可能なHTMLとして出力します。")
+st.set_page_config(page_title="シラバス整形・検索アプリ", page_icon="🗂️", layout="wide")
 
-uploaded_file = st.file_uploader("ここにシラバスのCSVファイルをドラッグ＆ドロップしてください", type=['csv'])
+st.sidebar.title("🗂️ 操作パネル")
+uploaded_file = st.sidebar.file_uploader("1. CSVファイルをアップロード", type=['csv'])
 
 if uploaded_file is not None:
     try:
         df = pd.read_csv(uploaded_file, encoding='cp932')
-        st.success("CSVファイルの読み込みに成功しました！")
         df.fillna('', inplace=True)
         df['sort_year'] = df['授業科目'].str.extract(r'(\d)').astype(float)
         
-        # --- ▼▼▼ 新機能1: セッション状態を初期化 ▼▼▼ ---
-        # ページを再読み込みしてもチェック状態を記憶するために使用
-        if 'select_all' not in st.session_state:
-            st.session_state.select_all = True
+        with st.sidebar.expander("2. 絞り込み", expanded=True):
+            bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
+            unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
+            selected_options = st.multiselect('対象を選択', unique_options, default=unique_options)
+            
+            # ▼▼▼ 複数キーワードに対応するためのUI修正 ▼▼▼
+            keyword_input = st.text_input("キーワード（スペースで区切って複数指定可）")
         
-        # ファイルが新しくアップロードされたら、必ず全選択状態に戻す
-        if 'last_uploaded_file' not in st.session_state or st.session_state.last_uploaded_file != uploaded_file.name:
-            st.session_state.select_all = True
-            st.session_state.last_uploaded_file = uploaded_file.name
+        with st.sidebar.expander("3. 並び替え", expanded=True):
+            sort_option = st.radio("学年で並び替え", ('並び替えなし', '学年で昇順', '学年で降順'))
 
-
-        st.markdown("---")
-        st.subheader("1. 絞り込みと並び替え")
+        st.title("📚 シラバス整形・検索結果")
+        st.write("左のパネルで絞り込みや並び替えができます。")
         
-        bracket_contents = df['授業科目'].str.extract(r'【(.*?)】')[0]
-        unique_options = sorted([opt for opt in bracket_contents.dropna().unique() if opt])
-        selected_options = st.multiselect('対象で絞り込み（【】内の情報から自動生成）', unique_options, default=unique_options)
-        keyword = st.text_input("キーワードでさらに絞り込み（授業科目、担当教員、授業概要などから検索）")
-        sort_option = st.radio("学年で並び替え", ('並び替えなし', '学年で昇順', '学年で降順'), horizontal=True)
-
+        # フィルタリングと並び替え
         df_filtered = df.copy()
         if selected_options:
             escaped_options = [re.escape(opt) for opt in selected_options]
             df_filtered = df_filtered[df_filtered['授業科目'].str.contains('|'.join(escaped_options), na=False)]
-        if keyword:
-            search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標', 'その他']
-            mask = df_filtered[search_columns].apply(lambda col: col.str.contains(keyword, case=False, na=False)).any(axis=1)
-            df_filtered = df_filtered[mask]
         
+        # ▼▼▼ 複数キーワード（AND検索）に対応するよう修正 ▼▼▼
+        if keyword_input:
+            keywords = keyword_input.split() # スペースで区切ってリスト化
+            search_columns = ['授業科目', '担当教員', '授業概要', 'テーマ(ねらい)及び到達目標', 'その他']
+            
+            for keyword in keywords:
+                # 各キーワードで順番に絞り込んでいく
+                mask = df_filtered[search_columns].apply(
+                    lambda col: col.str.contains(keyword, case=False, na=False)
+                ).any(axis=1)
+                df_filtered = df_filtered[mask]
+
         if sort_option == '学年で昇順':
             df_filtered = df_filtered.sort_values(by='sort_year', ascending=True)
         elif sort_option == '学年で降順':
             df_filtered = df_filtered.sort_values(by='sort_year', ascending=False)
         
         st.markdown("---")
-        st.subheader(f"2. 結果の選択（{len(df_filtered)}件ヒット）")
+        st.subheader(f"4. 結果の選択（{len(df_filtered)}件ヒット）")
         
-        # --- ▼▼▼ 新機能2: 全選択・全クリアボタン ▼▼▼ ---
-        col1, col2 = st.columns(2)
+        if 'select_all' not in st.session_state:
+            st.session_state.select_all = True
+        if 'last_uploaded_file' not in st.session_state or st.session_state.last_uploaded_file != uploaded_file.name:
+            st.session_state.select_all = True
+            st.session_state.last_uploaded_file = uploaded_file.name
+
+        col1, col2, _, _ = st.columns(4)
         if col1.button("✅ すべて選択"):
             st.session_state.select_all = True
         if col2.button("✖️ すべてクリア"):
             st.session_state.select_all = False
 
-        st.write("HTMLとして出力したい科目にチェックを入れてください。")
+        st.write("出力したい科目にチェックを入れてください。")
 
         selected_rows_indices = []
         if not df_filtered.empty:
             for index, row in df_filtered.iterrows():
-                # --- ▼▼▼ 新機能3: チェックボックスの状態をセッションと連動 ▼▼▼ ---
                 if st.checkbox(row['授業科目'], value=st.session_state.select_all, key=f"check_{index}"):
                     selected_rows_indices.append(index)
             
@@ -182,3 +187,5 @@ if uploaded_file is not None:
     except Exception as e:
         st.error(f"エラーが発生しました: {e}")
         st.error("文字コードが'cp932'ではない可能性があります。またはCSVの列名が想定と違うようです。")
+else:
+    st.info("←サイドバーからCSVファイルをアップロードすると、処理が始まります。")
